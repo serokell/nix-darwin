@@ -90,26 +90,16 @@ in
       '';
     };
 
-    services.buildkite-agent.openssh =
-      { privateKeyPath = mkOption {
-          type = types.path;
-          description = ''
-            Private agent key.
+    services.buildkite-agent.sshKeyPath = mkOption {
+      type = types.nullOr types.path;
+      default = null;
+      description = ''
+        Private agent SSH key.
 
-            A run-time path to the key file, which is supposed to be provisioned
-            outside of Nix store.
-          '';
-        };
-        publicKeyPath = mkOption {
-          type = types.path;
-          description = ''
-            Public agent key.
-
-            A run-time path to the key file, which is supposed to be provisioned
-            outside of Nix store.
-          '';
-        };
-      };
+        A runtime path to the key file, which is supposed to be provisioned
+        outside of Nix store.
+      '';
+    };
 
     services.buildkite-agent.hooks = mkHookOptions [
       { name = "checkout";
@@ -195,12 +185,14 @@ in
         ##     don't end up in the Nix store.
         script = let
           sshDir = "${cfg.dataDir}/.ssh";
+          sshKeyPath = toString cfg.sshKeyPath;
         in
           ''
-            mkdir -m 0700 -p "${sshDir}"
-            cp -f "${toString cfg.openssh.privateKeyPath}" "${sshDir}/id_rsa"
-            cp -f "${toString cfg.openssh.publicKeyPath}"  "${sshDir}/id_rsa.pub"
-            chmod 600 "${sshDir}"/id_rsa*
+            ${optionalString (cfg.sshKeyPath != null) ''
+              mkdir -m 0700 -p "${sshDir}"
+              cp -f "${sshKeyPath}" "${sshDir}/id_rsa"
+              chmod 600 "${sshDir}"/id_rsa
+            ''}
 
             cat > "${cfg.dataDir}/buildkite-agent.cfg" <<EOF
             token="$(cat ${toString cfg.tokenPath})"
