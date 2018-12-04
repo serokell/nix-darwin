@@ -33,6 +33,13 @@ with lib;
       description = "The user's primary group.";
     };
 
+    isAdmin = mkOption {
+      type = types.bool;
+      default = false;
+      example = true;
+      description = "Whether to make the user account an admin.";
+    };
+
     isHidden = mkOption {
       type = types.bool;
       default = true;
@@ -49,6 +56,13 @@ with lib;
       type = types.path;
       default = "/var/empty";
       description = "The user's home directory.";
+    };
+
+    homePermissions = mkOption {
+      type = types.str;
+      default = "700";
+      example = "770";
+      description = "The permissions for the user's home directory.";
     };
 
     shell = mkOption {
