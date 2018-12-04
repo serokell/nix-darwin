@@ -55,6 +55,7 @@ let
         ./modules/services/nix-daemon.nix
         ./modules/services/nix-gc
         ./modules/services/ofborg
+        ./modules/services/openssh
         ./modules/services/postgresql
         ./modules/services/privoxy
         ./modules/services/redis
