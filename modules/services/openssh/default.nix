@@ -46,7 +46,6 @@ let
 
   authKeysFiles = let
     mkAuthKeyFile = u: nameValuePair "ssh/authorized_keys.d/${u.name}" {
-      mode = "0444";
       source = pkgs.writeText "${u.name}-authorized_keys" ''
         ${concatStringsSep "\n" u.openssh.authorizedKeys.keys}
         ${concatMapStrings (f: readFile f + "\n") u.openssh.authorizedKeys.keyFiles}
