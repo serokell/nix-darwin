@@ -55,8 +55,8 @@ let
             "--builds-dir ${service.buildsDir}"
             ++ optional (service.cloneUrl != null)
             "--clone-url ${service.cloneUrl}"
-            ++ optional (service.preCloneScript != null)
-            "--pre-clone-script ${service.preCloneScript}"
+            ++ optional (service.preGetSourcesScript != null)
+            "--pre-get-sources-script ${service.preGetSourcesScript}"
             ++ optional (service.preBuildScript != null)
             "--pre-build-script ${service.preBuildScript}"
             ++ optional (service.postBuildScript != null)
@@ -480,7 +480,7 @@ in
               Whitelist allowed services.
             '';
           };
-          preCloneScript = mkOption {
+          preGetSourcesScript = mkOption {
             type = types.nullOr types.path;
             default = null;
             description = ''
