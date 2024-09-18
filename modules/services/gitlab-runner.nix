@@ -38,7 +38,10 @@ let
       ${concatStringsSep "\n" (mapAttrsToList (name: service: ''
         if echo "$NEW_SERVICES" | grep -xq ${name}; then
           bash -c ${escapeShellArg (concatStringsSep " \\\n " ([
-            "set -a && source ${service.registrationConfigFile} &&"
+            "set -a && source ${
+              if service.registrationConfigFile != null
+              then service.registrationConfigFile
+              else service.authenticationTokenConfigFile} &&"
             "gitlab-runner register"
             "--non-interactive"
             "--name ${name}"
@@ -57,11 +60,11 @@ let
             "--pre-build-script ${service.preBuildScript}"
             ++ optional (service.postBuildScript != null)
             "--post-build-script ${service.postBuildScript}"
-            ++ optional (service.tagList != [ ])
+            ++ optional (service.authenticationTokenConfigFile == null && service.tagList != [ ])
             "--tag-list ${concatStringsSep "," service.tagList}"
-            ++ optional service.runUntagged
+            ++ optional (service.authenticationTokenConfigFile == null && service.runUntagged)
             "--run-untagged"
-            ++ optional service.protected
+            ++ optional (service.authenticationTokenConfigFile == null && service.protected)
             "--access-level ref_protected"
             ++ optional service.debugTraceDisabled
             "--debug-trace-disabled"
@@ -326,8 +329,33 @@ in
       '';
       type = types.attrsOf (types.submodule {
         options = {
+          authenticationTokenConfigFile = mkOption {
+            type = with types; nullOr path;
+            default = null;
+            description = ''
+              Absolute path to a file containing environment variables used for
+              gitlab-runner registrations with *runner authentication tokens*.
+              They replace the deprecated *runner registration tokens*, as
+              outlined in the [GitLab documentation].
+
+              A list of all supported environment variables can be found with
+              `gitlab-runner register --help`.
+
+              The ones you probably want to set are:
+              - `CI_SERVER_URL=<CI server URL>`
+              - `CI_SERVER_TOKEN=<runner authentication token secret>`
+
+              ::: {.warning}
+              Make sure to use a quoted absolute path,
+              or it is going to be copied to Nix Store.
+              :::
+
+              [GitLab documentation]: https://docs.gitlab.com/17.0/ee/ci/runners/new_creation_workflow.html#estimated-time-frame-for-planned-changes
+            '';
+          };
           registrationConfigFile = mkOption {
-            type = types.path;
+            type = with types; nullOr path;
+            default = null;
             description = ''
               Absolute path to a file with environment variables
               used for gitlab-runner registration.
@@ -339,6 +367,16 @@ in
               `CI_SERVER_URL=<CI server URL>`
 
               `REGISTRATION_TOKEN=<registration secret>`
+
+              Support for *runner registration tokens* is deprecated since
+              GitLab 16.0, has been disabled by default in GitLab 17.0 and
+              will be removed in GitLab 18.0, as outlined in the
+              [GitLab documentation]. Please consider migrating to
+              [runner authentication tokens] and check the documentation on
+              {option}`services.gitlab-runner.services.<name>.authenticationTokenConfigFile`.
+
+              [GitLab documentation]: https://docs.gitlab.com/17.0/ee/ci/runners/new_creation_workflow.html#estimated-time-frame-for-planned-changes
+              [runner authentication tokens]: https://docs.gitlab.com/17.0/ee/ci/runners/new_creation_workflow.html#the-new-runner-registration-workflow
             '';
           };
           registrationFlags = mkOption {
@@ -544,8 +582,66 @@ in
     #  chown ${toString user.uid}:${toString user.gid} '${user.home}'
     #'';
 
-
-    warnings = optional (cfg.configFile != null) "services.gitlab-runner.`configFile` is deprecated, please use services.gitlab-runner.`services`.";
+    assertions =
+      mapAttrsToList (name: serviceConfig: {
+        assertion = serviceConfig.registrationConfigFile == null || serviceConfig.authenticationTokenConfigFile == null;
+        message = "`services.gitlab-runner.${name}.registrationConfigFile` and `services.gitlab-runner.services.${name}.authenticationTokenConfigFile` are mutually exclusive.";
+      }) cfg.services;
+    warnings = optional (cfg.configFile != null) "services.gitlab-runner.`configFile` is deprecated, please use services.gitlab-runner.`services`." ++
+      mapAttrsToList
+        (name: serviceConfig: "services.gitlab-runner.services.${name}.`registrationConfigFile` points to a file in Nix Store. You should use quoted absolute path to prevent this.")
+        (filterAttrs (name: serviceConfig: isStorePath serviceConfig.registrationConfigFile) cfg.services)
+      ++ mapAttrsToList
+        (name: serviceConfig: "services.gitlab-runner.services.${name}.`authenticationTokenConfigFile` points to a file in Nix Store. You should use quoted absolute path to prevent this.")
+        (filterAttrs (name: serviceConfig: isStorePath serviceConfig.authenticationTokenConfigFile) cfg.services)
+      ++ mapAttrsToList
+        (name: serviceConfig: ''
+          Runner registration tokens have been deprecated and disabled by default in GitLab >= 17.0.
+          Consider migrating to runner authentication tokens by setting `services.gitlab-runner.services.${name}.authenticationTokenConfigFile`.
+          https://docs.gitlab.com/17.0/ee/ci/runners/new_creation_workflow.html''
+        )
+        (
+          filterAttrs (name: serviceConfig:
+            serviceConfig.authenticationTokenConfigFile == null
+          ) cfg.services
+        )
+      ++ mapAttrsToList
+        (name: serviceConfig: ''
+          `services.gitlab-runner.services.${name}.protected` with runner authentication tokens has no effect and will be ignored. Please remove it from your configuration.''
+        )
+        (
+          filterAttrs (name: serviceConfig:
+            serviceConfig.authenticationTokenConfigFile != null && serviceConfig.protected == true
+          ) cfg.services
+        )
+      ++ mapAttrsToList
+        (name: serviceConfig: ''
+          `services.gitlab-runner.services.${name}.runUntagged` with runner authentication tokens has no effect and will be ignored. Please remove it from your configuration.''
+        )
+        (
+          filterAttrs (name: serviceConfig:
+            serviceConfig.authenticationTokenConfigFile != null && serviceConfig.runUntagged == true
+          ) cfg.services
+        )
+      ++ mapAttrsToList
+        (name: v: ''
+          `services.gitlab-runner.services.${name}.maximumTimeout` with runner authentication tokens has no effect and will be ignored. Please remove it from your configuration.''
+        )
+        (
+          filterAttrs (name: serviceConfig:
+            serviceConfig.authenticationTokenConfigFile != null && serviceConfig.maximumTimeout != 0
+          ) cfg.services
+        )
+      ++ mapAttrsToList
+        (name: v: ''
+          `services.gitlab-runner.services.${name}.tagList` with runner authentication tokens has no effect and will be ignored. Please remove it from your configuration.''
+        )
+        (
+          filterAttrs (serviceName: serviceConfig:
+            serviceConfig.authenticationTokenConfigFile != null && serviceConfig.tagList != [ ]
+          ) cfg.services
+        )
+      ;
     environment.systemPackages = [ cfg.package ];
 
     launchd.daemons.gitlab-runner = {
